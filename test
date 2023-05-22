@@ -1,0 +1,377 @@
+
+using UnityEngine;
+
+public class RocketLauncher : MonoBehaviour
+{
+    // Roketin ateşleneceği noktayı belirleyen değişken
+    public Transform firePoint;
+
+    // Roketin prefabını tutan değişken
+    public GameObject rocketPrefab;
+
+    // Roketin hızını belirleyen değişken
+    public float rocketSpeed = 20f;
+
+    // Roketin patlama efektini tutan değişken
+    public GameObject explosionPrefab;
+
+    // Roketin patlama yarıçapını belirleyen değişken
+    public float explosionRadius = 5f;
+
+    // Roketin patlama hasarını belirleyen değişken
+    public int explosionDamage = 10;
+
+    // Roketin mermi sayısını belirleyen değişken
+    public int ammoCount = 5;
+
+    // Silahın ses efektini tutan değişken
+    public AudioSource fireSound;
+
+    void Update()
+    {
+        // Eğer sol mouse tuşuna basılırsa ve mermi varsa
+        if (Input.GetButtonDown("Fire1") && ammoCount > 0)
+        {
+            // Ateşleme fonksiyonunu çağır
+            Fire();
+        }
+    }
+
+    void Fire()
+    {
+        // Ses efektini oynat
+        fireSound.Play();
+
+        // Mermi sayısını bir azalt
+        ammoCount--;
+
+        // Ateşleme noktasından bir roket oluştur ve bir değişkene ata
+        GameObject rocket = Instantiate(rocketPrefab, firePoint.position, firePoint.rotation);
+
+        // Rokete bir Rigidbody bileşeni ekle ve bir değişkene ata
+        Rigidbody rb = rocket.AddComponent<Rigidbody>();
+
+        // Rokete bir silah bileşeni ekle ve bu scripti ata
+        rocket.AddComponent<Weapon>().weaponScript = this;
+
+        // Rokete ileri yönde bir kuvvet uygula
+        rb.AddForce(firePoint.forward * rocketSpeed, ForceMode.Impulse);
+
+        // Eğer mermi kalmadıysa
+        if (ammoCount == 0)
+        {
+            // Silahı bırakma fonksiyonunu çağır
+            DropWeapon();
+        }
+    }
+
+    void DropWeapon()
+    {
+        // Silahın kinematik özelliğini aç ki fizik etkileşimleri olsun
+        GetComponent<Rigidbody>().isKinematic = false;
+
+        // Silahın ebeveynini boşalt
+        transform.SetParent(null);
+
+        // Silahın konumunu ve rotasyonunu orijinal haline getir (WeaponPickup scriptinden al)
+        transform.position = GetComponent<WeaponPickup>().originalPosition;
+        transform.rotation = GetComponent<WeaponPickup>().originalRotation;
+    }
+
+    public void Explode(Vector3 position)
+    {
+        // Patlama efektinden bir kopya oluştur ve pozisyonunu ayarla
+        GameObject explosion = Instantiate(explosionPrefab);
+        explosion.transform.position = position;
+
+        // Patlama yarıçapında bulunan tüm colliderları al
+        Collider[] colliders = Physics.OverlapSphere(position, explosionRadius);
+
+        // Her collider için
+        foreach (Collider collider in colliders)
+        {
+            // Eğer collider'in bir sağlık bileşeni varsa
+            ShootableBox health = collider.GetComponent<ShootableBox>();
+
+            // Sağlık bileşeninin hasar fonksiyonunu çağır ve patlama hasarını ver 
+            if (health != null)
+            {
+                health.Damage(explosionDamage);
+            }
+
+            // Eğer collider'in bir rigidbody bileşeni varsa 
+            Rigidbody rb = collider.GetComponent<Rigidbody>();
+
+            // Rigidbody'e patlama merkezinden uzaklaşacak şekilde bir kuvvet uygula 
+            if (rb != null)
+            {
+                rb.AddExplosionForce(explosionDamage * 10f, position, explosionRadius);
+            }
+        }
+
+        // Minik roketler oluşturmak için bir coroutine başlat 
+        StartCoroutine(CreateMiniRockets(position));
+
+    }
+
+    IEnumerator CreateMiniRockets(Vector3 position)
+    {
+        // Bir saniye bekleyin 
+        yield return new WaitForSeconds(1f);
+
+        // Dört tane minik roket oluşturun 
+        for (int i = 0; i < 4; i++)
+        {
+            // Patlama noktasından rastgele bir yönde bir roket oluşturun ve bir değişkene atayın 
+            GameObject miniRocket = Instantiate(rocketPrefab, position + Random.insideUnitSphere * 2f, Random.rotation);
+
+            // Rokete bir Rigidbody bileşeni ekleyin ve bir değişkene atayın 
+            Rigidbody rb = miniRocket.AddComponent<Rigidbody>();
+
+            // Rokete bir silah bileşeni ekleyin ve bu scripti atayın 
+            miniRocket.AddComponent<Weapon>().weaponScript = this;
+
+            // Rokete rastgele bir yönde bir kuvvet uygulayın 
+            rb.AddForce(miniRocket.transform.forward * rocketSpeed / 2f, ForceMode.Impulse);
+        }
+    }
+}
+
+
+
+using UnityEngine;
+
+public class WeaponPickup : MonoBehaviour
+{
+    // Silahın hangi tuşla alınıp bırakılacağını belirleyen değişken
+    public KeyCode pickupKey = KeyCode.E;
+
+    // Silahın karakterin eline nasıl yerleştirileceğini belirleyen değişken
+    public Transform weaponHolder;
+
+    // Silahın alınıp bırakılma durumunu tutan değişken
+    private bool isHolding = false;
+
+    // Silahın orijinal konumunu ve rotasyonunu tutan değişkenler
+    private Vector3 originalPosition;
+    private Quaternion originalRotation;
+
+    void Start()
+    {
+        // Silahın orijinal konumunu ve rotasyonunu kaydediyoruz
+        originalPosition = transform.position;
+        originalRotation = transform.rotation;
+    }
+
+    void Update()
+    {
+        // Eğer silahı almak veya bırakmak için tuşa basılırsa
+        if (Input.GetKeyDown(pickupKey))
+        {
+            // Eğer silahı tutuyorsak bırakıyoruz
+            if (isHolding)
+            {
+                DropWeapon();
+            }
+            // Eğer silahı tutmuyorsak alıyoruz
+            else
+            {
+                PickupWeapon();
+            }
+        }
+    }
+
+    void PickupWeapon()
+    {
+        // Silahın kinematik özelliğini kapatıyoruz ki fizik etkileşimleri olmasın
+        GetComponent<Rigidbody>().isKinematic = true;
+
+        // Silahın ebeveynini karakterin eline ayarlıyoruz
+        transform.SetParent(weaponHolder);
+
+        // Silahın konumunu ve rotasyonunu karakterin eline göre ayarlıyoruz
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = Quaternion.identity;
+
+        // Silahın alındığını belirtiyoruz
+        isHolding = true;
+    }
+
+    void DropWeapon()
+    {
+        // Silahın kinematik özelliğini açıyoruz ki fizik etkileşimleri olsun
+        GetComponent<Rigidbody>().isKinematic = false;
+
+        // Silahın ebeveynini boşaltıyoruz
+        transform.SetParent(null);
+
+        // Silahın konumunu ve rotasyonunu orijinal haline getiriyoruz
+        transform.position = originalPosition;
+        transform.rotation = originalRotation;
+
+        // Silahın bırakıldığını belirtiyoruz
+        isHolding = false;
+    }
+}
+
+
+
+public class Shotgun : MonoBehaviour
+{
+    // Pompalının ateşleneceği noktayı belirleyen değişken
+    public Transform firePoint;
+
+    // Pompalının saçma sayısını belirleyen değişken
+    public int pelletCount = 10;
+
+    // Pompalının menzilini belirleyen değişken
+    public float range = 20f;
+
+    // Pompalının hasarını belirleyen değişken
+    public int damage = 5;
+
+    // Pompalının mermi sayısını belirleyen değişken
+    public int ammoCount = 8;
+
+    // Pompalının ses efektini tutan değişken
+    public AudioSource fireSound;
+
+    void Update()
+    {
+        // Eğer sol mouse tuşuna basılırsa ve mermi varsa
+        if (Input.GetButtonDown("Fire1") && ammoCount > 0)
+        {
+            // Ateşleme fonksiyonunu çağır
+            Fire();
+        }
+    }
+
+    void Fire()
+    {
+        // Ses efektini oynat
+        fireSound.Play();
+
+        // Mermi sayısını bir azalt
+        ammoCount--;
+
+        // Saçma sayısı kadar döngü yap
+        for (int i = 0; i < pelletCount; i++)
+        {
+            // Ateşleme noktasından rastgele bir yönde bir raycast oluştur ve bilgilerini tut
+            Vector3 direction = firePoint.forward + Random.insideUnitSphere * 0.1f;
+            RaycastHit hit;
+
+            // Raycast'in menzil içinde bir şey vurup vurmadığını kontrol et 
+            if (Physics.Raycast(firePoint.position, direction, out hit, range))
+            {
+                // Eğer vurduysa, vurulan nesnenin sağlık bileşenini al 
+                ShootableBox health = hit.collider.GetComponent<ShootableBox>();
+
+                // Eğer sağlık bileşeni varsa, hasar fonksiyonunu çağır ve pompalının hasarını ver 
+                if (health != null)
+                {
+                    health.Damage(damage);
+                }
+            }
+        }
+
+        // Eğer mermi kalmadıysa 
+        if (ammoCount == 0)
+        {
+            // Silahı bırakma fonksiyonunu çağır 
+            DropWeapon();
+        }
+    }
+
+    void DropWeapon()
+    {
+        // Silahın kinematik özelliğini aç ki fizik etkileşimleri olsun 
+        GetComponent<Rigidbody>().isKinematic = false;
+
+        // Silahın ebeveynini boşalt 
+        transform.SetParent(null);
+
+        // Silahın konumunu ve rotasyonunu orijinal haline getir (WeaponPickup scriptinden al) 
+        transform.position = GetComponent<WeaponPickup>().originalPosition;
+        transform.rotation = GetComponent<WeaponPickup>().originalRotation;
+    }
+}
+
+
+
+
+
+using UnityEngine;
+
+public class SwordController : WeaponBase
+            {
+                // Kılıcın hasarını belirleyen değişken
+                public int damage = 10;
+
+                // Kılıcın sallanma hızını belirleyen değişken
+                public float swingSpeed = 10f;
+
+                // Kılıcın sallanma açısını belirleyen değişken
+                public float swingAngle = 90f;
+
+                // Kılıcın sallanma yönünü belirleyen değişken
+                private int swingDirection = 1;
+
+                // Kılıcın sallanma durumunu belirleyen değişken
+                private bool isSwinging = false;
+
+                // Ateşleme fonksiyonunu ana sınıftan farklı olarak yazmak için ezme (override) olarak tanımlıyoruz 
+                public override void Fire()
+                {
+                    // Ana sınıftaki ateşleme fonksiyonunu çağır 
+                    base.Fire();
+
+                    // Sallanma durumunu doğru yap 
+                    isSwinging = true;
+                }
+
+                void Update()
+                {
+                    // Eğer sallanma durumu doğruysa 
+                    if (isSwinging)
+                    {
+                        // Kılıcı z ekseninde sallanma hızı ve yönü ile döndür 
+                        transform.Rotate(0, 0, swingSpeed * swingDirection * Time.deltaTime);
+
+                        // Eğer kılıç sallanma açısının yarısını geçtiyse 
+                        if (Mathf.Abs(transform.localEulerAngles.z) > swingAngle / 2f)
+                        {
+                            // Sallanma yönünü ters çevir 
+                            swingDirection *= -1;
+                        }
+
+                        // Eğer kılıç başlangıç rotasyonuna döndüyse 
+                        if (transform.localEulerAngles.z == 0)
+                        {
+                            // Sallanma durumunu yanlış yap 
+                            isSwinging = false;
+                        }
+                    }
+                }
+
+                void OnTriggerEnter(Collider other)
+                {
+                    // Eğer temas edilen nesnenin bir sağlık bileşeni varsa 
+                    ShootableBox health = other.GetComponent<ShootableBox>();
+
+                    // Sağlık bileşeninin hasar fonksiyonunu çağır ve kılıcın hasarını ver 
+                    if (health != null)
+                    {
+                        health.Damage(damage);
+                    }
+
+                    // Eğer temas edilen nesnenin bir roket bileşeni varsa 
+                    Weapon weapon = other.GetComponent<Weapon>();
+
+                    // Roketin patlama fonksiyonunu çağır ve roketin konumunu ver 
+                    if (weapon != null && weapon.weaponScript is RocketLauncher)
+                    {
+                        weapon.weaponScript.Explode(other.transform.position);
+                    }
+                }
+            }
