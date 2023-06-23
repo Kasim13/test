@@ -274,3 +274,186 @@ public class TowerDataEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 }
+using UnityEngine;
+
+public class TowerTestScript : MonoBehaviour
+{
+    // Kule tipi, düşman bulma şekli ve delegate fonksiyonu seçmek için enumları tanımlayın
+    private enum TowerType
+    {
+        Bullet,
+        Projectile
+    }
+
+    private enum TargetMethod
+    {
+        SphereCast,
+        OverlapSphere,
+        Random
+    }
+
+    private enum SelectionMode
+    {
+        RandomSelect,
+        NearestSelect
+    }
+
+    // Ateş etme yöntemini belirleyen bir enum tipi tanımlayın
+    private enum CalculationMethod
+    {
+        CalculateProjectileVelocity,
+        CalculateProjectileAngle
+    }
+
+    // Kuleyi oluşturmak için gerekli değişkenleri [SerializeField] attribute ile private olarak tanımlayın
+    [SerializeField] private Transform scanTransform;
+    [SerializeField] private Transform[] enemysTransforms;
+    [SerializeField] private float sphereRadius = 10f;
+    [SerializeField] private float maxDistance = 50f;
+    [SerializeField] private Transform fireTransform;
+    [SerializeField] private GameObject bulletPrefab;
+    [SerializeField] private float shotForce = 10f;
+    [SerializeField] private float fireAngle = 45f;
+    // Düşmanların layer mask değeri
+    [SerializeField] private string layer;
+    // Ateş etme oranı
+    [SerializeField] private float fireRate = 1f;
+
+    // Son ateş etme zamanı
+    private float lastFireTime = 0f;
+
+    // Bu enumları public olarak tanımla
+    [SerializeField] private TowerType towerType;
+    [SerializeField] private TargetMethod targetMethod;
+    [SerializeField] private SelectionMode selectionMode;
+    [SerializeField] private CalculationMethod calculationMethod;
+    // AbstractTower tipinde bir değişken tanımla
+    private AbstractTower tower;
+    private ProjectileTargetShooter shooter;
+
+    // Script başladığında çalışacak bir metod tanımlayın
+    private void Awake()
+    {
+        // Kule tipi ve düşman bulma şekli seçimini kolaylaştırmak için enum veya scriptable object kullanabilirsin. Örneğin:
+        switch (towerType)
+        {
+            case TowerType.Bullet:
+                switch (targetMethod)
+                {
+                    case TargetMethod.SphereCast:
+                        tower = new BulletTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce);
+                        break;
+                    case TargetMethod.OverlapSphere:
+                        switch (selectionMode)
+                        {
+                            case SelectionMode.RandomSelect:
+                                tower = new BulletTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, shotForce, OverlapSphereTarget.randomSelect);
+                                break;
+                            case SelectionMode.NearestSelect:
+                                tower = new BulletTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, shotForce, OverlapSphereTarget.nearestSelect);
+                                break;
+                        }
+
+                        break;
+                    case TargetMethod.Random:
+                        tower = new BulletTower(enemysTransforms, fireTransform, bulletPrefab, shotForce);
+                        break;
+                }
+                break;
+            case TowerType.Projectile:
+                switch (calculationMethod)
+                {
+                    case CalculationMethod.CalculateProjectileVelocity:
+                        switch (targetMethod)
+                        {
+                            case TargetMethod.SphereCast:
+                                // Bir ProjectileTargetShooter nesnesi oluşturma
+                                shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                // Nesne üzerinden metodu çağırma
+                                tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                break;
+                            case TargetMethod.OverlapSphere:
+                                switch (selectionMode)
+                                {
+                                    case SelectionMode.RandomSelect:
+                                        // Bir ProjectileTargetShooter nesnesi oluşturma
+                                        shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                        // Nesne üzerinden metodu çağırma
+                                        tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                        break;
+                                    case SelectionMode.NearestSelect:
+                                        // Bir ProjectileTargetShooter nesnesi oluşturma
+                                        shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                        // Nesne üzerinden metodu çağırma
+                                        tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                        break;
+                                }
+                                break;
+                            case TargetMethod.Random:
+                                // Bir ProjectileTargetShooter nesnesi oluşturma
+                                shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                // Nesne üzerinden metodu çağırma
+                                tower = new ProjectileTower(enemysTransforms, fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
+                                break;
+                        }
+                        break;
+
+                    case CalculationMethod.CalculateProjectileAngle:
+                        switch (targetMethod)
+                        {
+                            case TargetMethod.SphereCast:
+                                // Bir ProjectileTargetShooter nesnesi oluşturma
+                                shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                // Nesne üzerinden metodu çağırma
+                                tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                break;
+                            case TargetMethod.OverlapSphere:
+                                switch (selectionMode)
+                                {
+                                    case SelectionMode.RandomSelect:
+                                        // Bir ProjectileTargetShooter nesnesi oluşturma
+                                        shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                        // Nesne üzerinden metodu çağırma
+                                        tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                        break;
+                                    case SelectionMode.NearestSelect:
+                                        // Bir ProjectileTargetShooter nesnesi oluşturma
+                                        shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                        // Nesne üzerinden metodu çağırma
+                                        tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                        break;
+                                }
+                                break;
+                            case TargetMethod.Random:
+                                // Bir ProjectileTargetShooter nesnesi oluşturma
+                                shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                // Nesne üzerinden metodu çağırma
+                                tower = new ProjectileTower(enemysTransforms, fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
+                                break;
+                        }
+                        break;
+                }
+                break;
+        }
+    }
+
+    // Her karede çalışacak bir metod tanımlayın
+    private void FixedUpdate()
+    {
+        // Ateş etme koşulunu bir bool değişkene atayabilirsin. Böylece kodun okunabilirliğini artırabilirsin. Örneğin:
+
+        bool canFire = Time.time - lastFireTime > 1f / fireRate;
+        if (canFire)
+        {
+            // Kuleye düşman hedeflemesini söyle
+            tower.EnemyTarget();
+
+            // Kuleye ateş etmesini söyle
+            tower.Fire();
+
+            // Son ateş etme zamanını güncelle
+            lastFireTime = Time.time;
+        }
+
+    }
+}
