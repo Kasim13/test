@@ -1,3 +1,94 @@
+// CustomEditor attribute'ünü kullanarak, bu sınıfın TowerData sınıfının custom editor'ü olduğunu belirtin
+using UnityEditor;
+
+[CustomEditor(typeof(TowerData))]
+public class TowerDataEditor : Editor
+{
+    // Custom editor'de kullanacağımız değişkenleri tanımlayın
+    private SerializedProperty towerType;
+    private SerializedProperty targetMethod;
+    private SerializedProperty selectionMode;
+    //private SerializedProperty scanTransform;
+    private SerializedProperty sphereRadius;
+    private SerializedProperty maxDistance;
+    //private SerializedProperty fireTransform;
+    private SerializedProperty bulletPrefab;
+    private SerializedProperty shotForce;
+    private SerializedProperty fireAngle;
+    private SerializedProperty enemyLayer;
+
+    // Custom editor başladığında çalışacak bir metod tanımlayın
+    private void OnEnable()
+    {
+        // Değişkenleri TowerData sınıfından alın
+        towerType = serializedObject.FindProperty("towerType");
+        targetMethod = serializedObject.FindProperty("targetMethod");
+        selectionMode = serializedObject.FindProperty("selectionMode");
+        //scanTransform = serializedObject.FindProperty("scanTransform");
+        sphereRadius = serializedObject.FindProperty("sphereRadius");
+        maxDistance = serializedObject.FindProperty("maxDistance");
+        //fireTransform = serializedObject.FindProperty("fireTransform");
+        bulletPrefab = serializedObject.FindProperty("bulletPrefab");
+        shotForce = serializedObject.FindProperty("shotForce");
+        fireAngle = serializedObject.FindProperty("fireAngle");
+        enemyLayer = serializedObject.FindProperty("enemyLayer");
+    }
+
+    // Custom editor'de Inspector panelinde ne gösterileceğini belirleyen bir metod tanımlayın
+    public override void OnInspectorGUI()
+    {
+        // Değişiklikleri kaydetmek için serializedObject.Update() metodunu çağırın
+        serializedObject.Update();
+
+        // Tower Type, Target Method ve Selection Mode değişkenlerini Inspector panelinde gösterin
+        EditorGUILayout.PropertyField(towerType);
+        EditorGUILayout.PropertyField(targetMethod);
+        EditorGUILayout.PropertyField(selectionMode);
+
+        // Target Method değerine göre farklı değişkenleri gösterin veya gizleyin
+        switch (targetMethod.enumValueIndex)
+        {
+            case (int)TowerData.TargetMethod.SphereCast:
+                // Eğer Target Method SphereCast ise, Scan Transform, Sphere Radius ve Max Distance değişkenlerini gösterin
+                //EditorGUILayout.PropertyField(scanTransform);
+                EditorGUILayout.PropertyField(sphereRadius);
+                EditorGUILayout.PropertyField(maxDistance);
+                EditorGUILayout.PropertyField(enemyLayer);
+                break;
+            case (int)TowerData.TargetMethod.OverlapSphere:
+                // Eğer Target Method OverlapSphere ise, Scan Transform ve Sphere Radius değişkenlerini gösterin
+                //EditorGUILayout.PropertyField(scanTransform);
+                EditorGUILayout.PropertyField(sphereRadius);
+                EditorGUILayout.PropertyField(enemyLayer);
+                break;
+            case (int)TowerData.TargetMethod.Random:
+                // Eğer Target Method Random ise, hiçbir değişken göstermeyin
+                break;
+        }
+
+        // Tower Type değerine göre farklı değişkenleri gösterin veya gizleyin
+        switch (towerType.enumValueIndex)
+        {
+            case (int)TowerData.TowerType.Bullet:
+                // Eğer Tower Type Bullet ise, Fire Transform, Bullet Prefab ve Shot Force değişkenlerini gösterin
+                //EditorGUILayout.PropertyField(fireTransform);
+                EditorGUILayout.PropertyField(bulletPrefab);
+                EditorGUILayout.PropertyField(shotForce);
+                break;
+            case (int)TowerData.TowerType.Projectile:
+                // Eğer Tower Type Projectile ise, Fire Transform, Bullet Prefab, Shot Force ve Fire Angle değişkenlerini gösterin
+                //EditorGUILayout.PropertyField(fireTransform);
+                EditorGUILayout.PropertyField(bulletPrefab);
+                EditorGUILayout.PropertyField(shotForce);
+                EditorGUILayout.PropertyField(fireAngle);
+                break;
+        }
+
+        // Değişiklikleri uygulamak için serializedObject.ApplyModifiedProperties() metodunu çağırın
+        serializedObject.ApplyModifiedProperties();
+    }
+}
+
 using UnityEngine;
 
 // Scriptable object sınıfını tanımlamak için [CreateAssetMenu] attribute'ünü kullanın
@@ -38,7 +129,7 @@ public class TowerData : ScriptableObject
     [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private float shotForce = 10f;
     [SerializeField] private float fireAngle = 45f;
-    [SerializeField] private string layer;
+    [SerializeField] private string enemyLayer;
 
     //[SerializeField] private Transform scanTransform;
     //[SerializeField] private Transform fireTransform;
@@ -54,7 +145,7 @@ public class TowerData : ScriptableObject
     public GameObject BulletPrefab { get => bulletPrefab; }
     public float ShotForce { get => shotForce; }
     public float FireAngle { get => fireAngle; }
-    public string Layer { get => layer; }
+    public string EnemyLayer { get => enemyLayer; }
 
     //public Transform ScanTransform { get => scanTransform; }
     //public Transform FireTransform { get => fireTransform; }
@@ -66,26 +157,30 @@ using UnityEngine;
 
 public class TowerObject : MonoBehaviour
 {
-    public Transform scanTransform;
-    public Transform fireTransform;
-
-    public Transform[] enemysTransforms;
-
+    [SerializeField] private Transform scanTransform;
+    [SerializeField] private Transform fireTransform;
+    // Düşmanların layer mask değeri
+    [SerializeField] private string layer;
+    [SerializeField] private Transform[] enemysTransforms;
+    // Ateş etme oranı
+    [SerializeField] private float fireRate = 1f;
     //TowerData tipinde bir değişken tanımla
-    public TowerData towerData;
+    [SerializeField] private TowerData towerData;
+
+    // Son ateş etme zamanı
+    private float lastFireTime = 0f;
 
     //AbstractTower tipinde bir değişken tanımla
     private AbstractTower tower;
 
-    // Ateş etme oranı
-    [SerializeField] private float fireRate = 1f;
-    // Son ateş etme zamanı
-    private float lastFireTime = 0f;
-
     //private ProjectileTargetShooter shooter;
+
     // Script başladığında çalışacak bir metod tanımlayın
+    
     private void Awake()
     {
+        if (layer == null || towerData.EnemyLayer != null) { layer = towerData.EnemyLayer; } else if (towerData.EnemyLayer == null || layer == null) { layer = "Enemy"; }
+
         // Kule tipi ve düşman bulma şekli seçimini kolaylaştırmak için enum veya scriptable object kullanabilirsin. Örneğin:
         switch (towerData.TypeTower)
         {
@@ -93,16 +188,18 @@ public class TowerObject : MonoBehaviour
                 switch (towerData.MethodTarget)
                 {
                     case TowerData.TargetMethod.SphereCast:
-                        tower = new BulletTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, towerData.Layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce);
+                        tower = new BulletTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce);
                         break;
                     case TowerData.TargetMethod.OverlapSphere:
                         switch (towerData.ModeSelection)
                         {
                             case TowerData.SelectionMode.RandomSelect:
-                                tower = new BulletTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.randomSelect);
+                                tower = new BulletTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.randomSelect);
                                 break;
                             case TowerData.SelectionMode.NearestSelect:
-                                tower = new BulletTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.nearestSelect);
+                                tower = new BulletTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.nearestSelect);
+                                if (tower == null) Debug.Log("nulllllllllllllllllllllllllllllllll");
+                                Debug.Log(scanTransform.name + "&&" + towerData.SphereRadius + "&&" + layer + "&&" + fireTransform + "&&" + towerData.BulletPrefab + "&&" + towerData.ShotForce + "&&" + OverlapSphereTarget.nearestSelect);
                                 break;
                         }
 
@@ -122,7 +219,7 @@ public class TowerObject : MonoBehaviour
                                 // Bir ProjectileTargetShooter nesnesi oluşturma
                                 //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
                                 // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, towerData.Layer, fireTransform, towerData.BulletPrefab, towerData.FireAngle, true);
+                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.FireAngle, true);
                                 break;
                             case TowerData.TargetMethod.OverlapSphere:
                                 switch (towerData.ModeSelection)
@@ -131,13 +228,13 @@ public class TowerObject : MonoBehaviour
                                         // Bir ProjectileTargetShooter nesnesi oluşturma
                                         //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
                                         // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect,towerData.FireAngle, true);
+                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect,towerData.FireAngle, true);
                                         break;
                                     case TowerData.SelectionMode.NearestSelect:
                                         // Bir ProjectileTargetShooter nesnesi oluşturma
                                         //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
                                         // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, true);
+                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, true);
                                         break;
                                 }
                                 break;
@@ -157,7 +254,7 @@ public class TowerObject : MonoBehaviour
                                 // Bir ProjectileTargetShooter nesnesi oluşturma
                                 //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
                                 // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, towerData.Layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, false);
+                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, false);
                                 break;
                             case TowerData.TargetMethod.OverlapSphere:
                                 switch (towerData.ModeSelection)
@@ -166,13 +263,13 @@ public class TowerObject : MonoBehaviour
                                         // Bir ProjectileTargetShooter nesnesi oluşturma
                                         //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
                                         // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect, towerData.FireAngle, false);
+                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect, towerData.FireAngle, false);
                                         break;
                                     case TowerData.SelectionMode.NearestSelect:
                                         // Bir ProjectileTargetShooter nesnesi oluşturma
                                         //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
                                         // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, towerData.Layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, false);
+                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, false);
                                         break;
                                 }
                                 break;
@@ -196,24 +293,17 @@ public class TowerObject : MonoBehaviour
         bool canFire = Time.time - lastFireTime > 1f / fireRate;
         if (canFire)
         {
-            if (tower != null) // tower null değilse
-            {
                 // Kuleye düşman hedeflemesini söyle
                 tower.EnemyTarget();
 
                 // Kuleye ateş etmesini söyle
                 tower.Fire();
-            }
-            else // tower null ise
-            {
-                Debug.Log("tower is null"); // Hata mesajı yazdır
-            }
+        }
 
             // Son ateş etme zamanını güncelle
             lastFireTime = Time.time;
         }
     }
-}
 
 using UnityEngine;
 
@@ -398,91 +488,3 @@ public class TowerTestScript : MonoBehaviour
 
     }
 }
-
-// CustomEditor attribute'ünü kullanarak, bu sınıfın TowerData sınıfının custom editor'ü olduğunu belirtin
-using UnityEditor;
-
-[CustomEditor(typeof(TowerData))]
-public class TowerDataEditor : Editor
-{
-    // Custom editor'de kullanacağımız değişkenleri tanımlayın
-    private SerializedProperty towerType;
-    private SerializedProperty targetMethod;
-    private SerializedProperty selectionMode;
-    //private SerializedProperty scanTransform;
-    private SerializedProperty sphereRadius;
-    private SerializedProperty maxDistance;
-    //private SerializedProperty fireTransform;
-    private SerializedProperty bulletPrefab;
-    private SerializedProperty shotForce;
-    private SerializedProperty fireAngle;
-
-    // Custom editor başladığında çalışacak bir metod tanımlayın
-    private void OnEnable()
-    {
-        // Değişkenleri TowerData sınıfından alın
-        towerType = serializedObject.FindProperty("towerType");
-        targetMethod = serializedObject.FindProperty("targetMethod");
-        selectionMode = serializedObject.FindProperty("selectionMode");
-        //scanTransform = serializedObject.FindProperty("scanTransform");
-        sphereRadius = serializedObject.FindProperty("sphereRadius");
-        maxDistance = serializedObject.FindProperty("maxDistance");
-        //fireTransform = serializedObject.FindProperty("fireTransform");
-        bulletPrefab = serializedObject.FindProperty("bulletPrefab");
-        shotForce = serializedObject.FindProperty("shotForce");
-        fireAngle = serializedObject.FindProperty("fireAngle");
-    }
-
-    // Custom editor'de Inspector panelinde ne gösterileceğini belirleyen bir metod tanımlayın
-    public override void OnInspectorGUI()
-    {
-        // Değişiklikleri kaydetmek için serializedObject.Update() metodunu çağırın
-        serializedObject.Update();
-
-        // Tower Type, Target Method ve Selection Mode değişkenlerini Inspector panelinde gösterin
-        EditorGUILayout.PropertyField(towerType);
-        EditorGUILayout.PropertyField(targetMethod);
-        EditorGUILayout.PropertyField(selectionMode);
-
-        // Target Method değerine göre farklı değişkenleri gösterin veya gizleyin
-        switch (targetMethod.enumValueIndex)
-        {
-            case (int)TowerData.TargetMethod.SphereCast:
-                // Eğer Target Method SphereCast ise, Scan Transform, Sphere Radius ve Max Distance değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(scanTransform);
-                EditorGUILayout.PropertyField(sphereRadius);
-                EditorGUILayout.PropertyField(maxDistance);
-                break;
-            case (int)TowerData.TargetMethod.OverlapSphere:
-                // Eğer Target Method OverlapSphere ise, Scan Transform ve Sphere Radius değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(scanTransform);
-                EditorGUILayout.PropertyField(sphereRadius);
-                break;
-            case (int)TowerData.TargetMethod.Random:
-                // Eğer Target Method Random ise, hiçbir değişken göstermeyin
-                break;
-        }
-
-        // Tower Type değerine göre farklı değişkenleri gösterin veya gizleyin
-        switch (towerType.enumValueIndex)
-        {
-            case (int)TowerData.TowerType.Bullet:
-                // Eğer Tower Type Bullet ise, Fire Transform, Bullet Prefab ve Shot Force değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(fireTransform);
-                EditorGUILayout.PropertyField(bulletPrefab);
-                EditorGUILayout.PropertyField(shotForce);
-                break;
-            case (int)TowerData.TowerType.Projectile:
-                // Eğer Tower Type Projectile ise, Fire Transform, Bullet Prefab, Shot Force ve Fire Angle değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(fireTransform);
-                EditorGUILayout.PropertyField(bulletPrefab);
-                EditorGUILayout.PropertyField(shotForce);
-                EditorGUILayout.PropertyField(fireAngle);
-                break;
-        }
-
-        // Değişiklikleri uygulamak için serializedObject.ApplyModifiedProperties() metodunu çağırın
-        serializedObject.ApplyModifiedProperties();
-    }
-}
-
