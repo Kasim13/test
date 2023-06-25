@@ -1,490 +1,476 @@
-// CustomEditor attribute'ünü kullanarak, bu sınıfın TowerData sınıfının custom editor'ü olduğunu belirtin
-using UnityEditor;
-
-[CustomEditor(typeof(TowerData))]
-public class TowerDataEditor : Editor
-{
-    // Custom editor'de kullanacağımız değişkenleri tanımlayın
-    private SerializedProperty towerType;
-    private SerializedProperty targetMethod;
-    private SerializedProperty selectionMode;
-    //private SerializedProperty scanTransform;
-    private SerializedProperty sphereRadius;
-    private SerializedProperty maxDistance;
-    //private SerializedProperty fireTransform;
-    private SerializedProperty bulletPrefab;
-    private SerializedProperty shotForce;
-    private SerializedProperty fireAngle;
-    private SerializedProperty enemyLayer;
-
-    // Custom editor başladığında çalışacak bir metod tanımlayın
-    private void OnEnable()
-    {
-        // Değişkenleri TowerData sınıfından alın
-        towerType = serializedObject.FindProperty("towerType");
-        targetMethod = serializedObject.FindProperty("targetMethod");
-        selectionMode = serializedObject.FindProperty("selectionMode");
-        //scanTransform = serializedObject.FindProperty("scanTransform");
-        sphereRadius = serializedObject.FindProperty("sphereRadius");
-        maxDistance = serializedObject.FindProperty("maxDistance");
-        //fireTransform = serializedObject.FindProperty("fireTransform");
-        bulletPrefab = serializedObject.FindProperty("bulletPrefab");
-        shotForce = serializedObject.FindProperty("shotForce");
-        fireAngle = serializedObject.FindProperty("fireAngle");
-        enemyLayer = serializedObject.FindProperty("enemyLayer");
-    }
-
-    // Custom editor'de Inspector panelinde ne gösterileceğini belirleyen bir metod tanımlayın
-    public override void OnInspectorGUI()
-    {
-        // Değişiklikleri kaydetmek için serializedObject.Update() metodunu çağırın
-        serializedObject.Update();
-
-        // Tower Type, Target Method ve Selection Mode değişkenlerini Inspector panelinde gösterin
-        EditorGUILayout.PropertyField(towerType);
-        EditorGUILayout.PropertyField(targetMethod);
-        EditorGUILayout.PropertyField(selectionMode);
-
-        // Target Method değerine göre farklı değişkenleri gösterin veya gizleyin
-        switch (targetMethod.enumValueIndex)
-        {
-            case (int)TowerData.TargetMethod.SphereCast:
-                // Eğer Target Method SphereCast ise, Scan Transform, Sphere Radius ve Max Distance değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(scanTransform);
-                EditorGUILayout.PropertyField(sphereRadius);
-                EditorGUILayout.PropertyField(maxDistance);
-                EditorGUILayout.PropertyField(enemyLayer);
-                break;
-            case (int)TowerData.TargetMethod.OverlapSphere:
-                // Eğer Target Method OverlapSphere ise, Scan Transform ve Sphere Radius değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(scanTransform);
-                EditorGUILayout.PropertyField(sphereRadius);
-                EditorGUILayout.PropertyField(enemyLayer);
-                break;
-            case (int)TowerData.TargetMethod.Random:
-                // Eğer Target Method Random ise, hiçbir değişken göstermeyin
-                break;
-        }
-
-        // Tower Type değerine göre farklı değişkenleri gösterin veya gizleyin
-        switch (towerType.enumValueIndex)
-        {
-            case (int)TowerData.TowerType.Bullet:
-                // Eğer Tower Type Bullet ise, Fire Transform, Bullet Prefab ve Shot Force değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(fireTransform);
-                EditorGUILayout.PropertyField(bulletPrefab);
-                EditorGUILayout.PropertyField(shotForce);
-                break;
-            case (int)TowerData.TowerType.Projectile:
-                // Eğer Tower Type Projectile ise, Fire Transform, Bullet Prefab, Shot Force ve Fire Angle değişkenlerini gösterin
-                //EditorGUILayout.PropertyField(fireTransform);
-                EditorGUILayout.PropertyField(bulletPrefab);
-                EditorGUILayout.PropertyField(shotForce);
-                EditorGUILayout.PropertyField(fireAngle);
-                break;
-        }
-
-        // Değişiklikleri uygulamak için serializedObject.ApplyModifiedProperties() metodunu çağırın
-        serializedObject.ApplyModifiedProperties();
-    }
-}
-
+using System.Collections;
+using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
-// Scriptable object sınıfını tanımlamak için [CreateAssetMenu] attribute'ünü kullanın
-[CreateAssetMenu(fileName = "TowerData", menuName = "ScriptableObjects/TowerData", order = 1)]
-public class TowerData : ScriptableObject
+public class PlayerMovement : MonoBehaviour
 {
-    // Kule tipi, düşman bulma şekli ve delegate fonksiyonu seçmek için enumları tanımlayın
-    public enum TowerType
+    [Header("Movement")]
+    private float moveSpeed;
+    private float desiredMoveSpeed;
+    private float lastDesiredMoveSpeed;
+    public float walkSpeed;
+    public float sprintSpeed;
+    public float slideSpeed;
+    public float wallrunSpeed;
+    public float climbSpeed;
+    public float vaultSpeed;
+    public float airMinSpeed;
+    public float swingSpeed;
+
+    public float speedIncreaseMultiplier;
+    public float slopeIncreaseMultiplier;
+
+    public float groundDrag;
+
+    [Header("Jumping")]
+    public float jumpForce;
+    public float jumpCooldown;
+    public float airMultiplier;
+    bool readyToJump;
+
+    [Header("Crouching")]
+    public float crouchSpeed;
+    public float crouchYScale;
+    private float startYScale;
+
+    [Header("Keybinds")]
+    public KeyCode jumpKey = KeyCode.Space;
+    public KeyCode sprintKey = KeyCode.LeftShift;
+    public KeyCode crouchKey = KeyCode.LeftControl;
+
+    [Header("Ground Check")]
+    public float playerHeight;
+    public LayerMask whatIsGround;
+    public bool grounded;
+
+    [Header("Slope Handling")]
+    public float maxSlopeAngle;
+    private RaycastHit slopeHit;
+    private bool exitingSlope;
+
+    [Header("References")]
+    //public Climbing climbingScript;
+    private ClimbingDone climbingScriptDone;
+
+    [Header("Camera Effects")]
+    public PlayerCam cam;
+    public float grappleFov = 95f;
+
+    public Transform orientation;
+
+    float horizontalInput;
+    float verticalInput;
+
+    Vector3 moveDirection;
+
+    Rigidbody rb;
+
+    public MovementState state;
+    public enum MovementState
     {
-        Bullet,
-        Projectile
+        freeze,
+        unlimited,
+        walking,
+        sprinting,
+        wallrunning,
+        climbing,
+        vaulting,
+        crouching,
+        sliding,
+        grappling,
+        swinging,
+        air
     }
-    public enum TargetMethod
+
+    public bool sliding;
+    public bool crouching;
+    public bool wallrunning;
+    public bool climbing;
+    public bool vaulting;
+
+    public bool freeze;
+    public bool unlimited;
+
+    public bool activeGrapple;
+    public bool swinging;
+
+    public bool restricted;
+
+    private void Start()
     {
-        SphereCast,
-        OverlapSphere,
-        Random
+        climbingScriptDone = GetComponent<ClimbingDone>();
+        rb = GetComponent<Rigidbody>();
+        rb.freezeRotation = true;
+
+        readyToJump = true;
+
+        startYScale = transform.localScale.y;
     }
-    public enum SelectionMode
+
+    private void Update()
     {
-        RandomSelect,
-        NearestSelect
-    }
-    // Ateş etme yöntemini belirleyen bir enum tipi tanımlayın
-    public enum CalculationMethod
-    {
-        CalculateProjectileVelocity,
-        CalculateProjectileAngle
-    }
+        // ground check
+        grounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, whatIsGround);
 
-    // Kuleyi oluşturmak için gerekli değişkenleri [SerializeField] attribute ile private olarak tanımlayın
-    [SerializeField] private TowerType towerType;
-    [SerializeField] private TargetMethod targetMethod;
-    [SerializeField] private SelectionMode selectionMode;
-    [SerializeField] private CalculationMethod calculationMethod;
-    [SerializeField] private float sphereRadius = 10f;
-    [SerializeField] private float maxDistance = 50f;
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float shotForce = 10f;
-    [SerializeField] private float fireAngle = 45f;
-    [SerializeField] private string enemyLayer;
+        MyInput();
+        SpeedControl();
+        StateHandler();
+        TextStuff();
 
-    //[SerializeField] private Transform scanTransform;
-    //[SerializeField] private Transform fireTransform;
-    //[SerializeField] private Transform[] enemysTransforms;
-
-    // Bu değişkenlere erişmek için public property'ler tanımlayın
-    public TowerType TypeTower { get => towerType; }
-    public TargetMethod MethodTarget { get => targetMethod; }
-    public SelectionMode ModeSelection { get => selectionMode; }
-    public CalculationMethod MethodCalculation { get => calculationMethod; }
-    public float SphereRadius { get => sphereRadius; }
-    public float MaxDistance { get => maxDistance; }
-    public GameObject BulletPrefab { get => bulletPrefab; }
-    public float ShotForce { get => shotForce; }
-    public float FireAngle { get => fireAngle; }
-    public string EnemyLayer { get => enemyLayer; }
-
-    //public Transform ScanTransform { get => scanTransform; }
-    //public Transform FireTransform { get => fireTransform; }
-    //public Transform[] ScanTransforms { get => enemysTransforms; }
-}
-
-
-using UnityEngine;
-
-public class TowerObject : MonoBehaviour
-{
-    [SerializeField] private Transform scanTransform;
-    [SerializeField] private Transform fireTransform;
-    // Düşmanların layer mask değeri
-    [SerializeField] private string layer;
-    [SerializeField] private Transform[] enemysTransforms;
-    // Ateş etme oranı
-    [SerializeField] private float fireRate = 1f;
-    //TowerData tipinde bir değişken tanımla
-    [SerializeField] private TowerData towerData;
-
-    // Son ateş etme zamanı
-    private float lastFireTime = 0f;
-
-    //AbstractTower tipinde bir değişken tanımla
-    private AbstractTower tower;
-
-    //private ProjectileTargetShooter shooter;
-
-    // Script başladığında çalışacak bir metod tanımlayın
-    
-    private void Awake()
-    {
-        if (layer == null || towerData.EnemyLayer != null) { layer = towerData.EnemyLayer; } else if (towerData.EnemyLayer == null || layer == null) { layer = "Enemy"; }
-
-        // Kule tipi ve düşman bulma şekli seçimini kolaylaştırmak için enum veya scriptable object kullanabilirsin. Örneğin:
-        switch (towerData.TypeTower)
-        {
-            case TowerData.TowerType.Bullet:
-                switch (towerData.MethodTarget)
-                {
-                    case TowerData.TargetMethod.SphereCast:
-                        tower = new BulletTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce);
-                        break;
-                    case TowerData.TargetMethod.OverlapSphere:
-                        switch (towerData.ModeSelection)
-                        {
-                            case TowerData.SelectionMode.RandomSelect:
-                                tower = new BulletTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.randomSelect);
-                                break;
-                            case TowerData.SelectionMode.NearestSelect:
-                                tower = new BulletTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, OverlapSphereTarget.nearestSelect);
-                                if (tower == null) Debug.Log("nulllllllllllllllllllllllllllllllll");
-                                Debug.Log(scanTransform.name + "&&" + towerData.SphereRadius + "&&" + layer + "&&" + fireTransform + "&&" + towerData.BulletPrefab + "&&" + towerData.ShotForce + "&&" + OverlapSphereTarget.nearestSelect);
-                                break;
-                        }
-
-                        break;
-                    case TowerData.TargetMethod.Random:
-                        tower = new BulletTower(enemysTransforms, fireTransform, towerData.BulletPrefab, towerData.ShotForce);
-                        break;
-                }
-                break;
-            case TowerData.TowerType.Projectile:
-                switch (towerData.MethodCalculation)
-                {
-                    case TowerData.CalculationMethod.CalculateProjectileVelocity:
-                        switch (towerData.MethodTarget)
-                        {
-                            case TowerData.TargetMethod.SphereCast:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.FireAngle, true);
-                                break;
-                            case TowerData.TargetMethod.OverlapSphere:
-                                switch (towerData.ModeSelection)
-                                {
-                                    case TowerData.SelectionMode.RandomSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect,towerData.FireAngle, true);
-                                        break;
-                                    case TowerData.SelectionMode.NearestSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, true);
-                                        break;
-                                }
-                                break;
-                            case TowerData.TargetMethod.Random:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.FireAngle, shooter.CalculateProjectileVelocity);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(enemysTransforms, fireTransform, towerData.BulletPrefab, towerData.FireAngle, true);
-                                break;
-                        }
-                        break;
-
-                    case TowerData.CalculationMethod.CalculateProjectileAngle:
-                        switch (towerData.MethodTarget)
-                        {
-                            case TowerData.TargetMethod.SphereCast:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, towerData.SphereRadius, towerData.MaxDistance, layer, fireTransform, towerData.BulletPrefab, towerData.ShotForce, false);
-                                break;
-                            case TowerData.TargetMethod.OverlapSphere:
-                                switch (towerData.ModeSelection)
-                                {
-                                    case TowerData.SelectionMode.RandomSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.randomSelect, towerData.FireAngle, false);
-                                        break;
-                                    case TowerData.SelectionMode.NearestSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, towerData.SphereRadius, layer, fireTransform, towerData.BulletPrefab, OverlapSphereTarget.nearestSelect, towerData.FireAngle, false);
-                                        break;
-                                }
-                                break;
-                            case TowerData.TargetMethod.Random:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, towerData.BulletPrefab, towerData.ShotForce, shooter.CalculateProjectileAngle);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(enemysTransforms, fireTransform, towerData.BulletPrefab, towerData.ShotForce, false);
-                                break;
-                        }
-                        break;
-                }
-                break;
-        }
+        // handle drag
+        if (grounded && !activeGrapple)
+            rb.drag = groundDrag;
+        else
+            rb.drag = 0;
     }
 
     private void FixedUpdate()
     {
-        // Ateş etme koşulunu bir bool değişkene atayabilirsin. Böylece kodun okunabilirliğini artırabilirsin. Örneğin:
+        MovePlayer();
+    }
 
-        bool canFire = Time.time - lastFireTime > 1f / fireRate;
-        if (canFire)
+    private void MyInput()
+    {
+        horizontalInput = Input.GetAxisRaw("Horizontal");
+        verticalInput = Input.GetAxisRaw("Vertical");
+
+        // when to jump
+        if (Input.GetKey(jumpKey) && readyToJump && grounded)
         {
-                // Kuleye düşman hedeflemesini söyle
-                tower.EnemyTarget();
+            readyToJump = false;
 
-                // Kuleye ateş etmesini söyle
-                tower.Fire();
+            Jump();
+
+            Invoke(nameof(ResetJump), jumpCooldown);
         }
 
-            // Son ateş etme zamanını güncelle
-            lastFireTime = Time.time;
-        }
-    }
-
-using UnityEngine;
-
-public class TowerTestScript : MonoBehaviour
-{
-    // Kule tipi, düşman bulma şekli ve delegate fonksiyonu seçmek için enumları tanımlayın
-    public enum TowerType
-    {
-        Bullet,
-        Projectile
-    }
-
-    public enum TargetMethod
-    {
-        SphereCast,
-        OverlapSphere,
-        Random
-    }
-
-    public enum SelectionMode
-    {
-        RandomSelect,
-        NearestSelect
-    }
-
-    // Ateş etme yöntemini belirleyen bir enum tipi tanımlayın
-    public enum CalculationMethod
-    {
-        CalculateProjectileVelocity,
-        CalculateProjectileAngle
-    }
-
-    // Kuleyi oluşturmak için gerekli değişkenleri [SerializeField] attribute ile private olarak tanımlayın
-    [SerializeField] private Transform scanTransform;
-    [SerializeField] private Transform[] enemysTransforms;
-    [SerializeField] private float sphereRadius = 10f;
-    [SerializeField] private float maxDistance = 50f;
-    [SerializeField] private Transform fireTransform;
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float shotForce = 10f;
-    [SerializeField] private float fireAngle = 45f;
-    // Düşmanların layer mask değeri
-    [SerializeField] private string layer;
-    // Ateş etme oranı
-    [SerializeField] private float fireRate = 1f;
-
-    // Son ateş etme zamanı
-    private float lastFireTime = 0f;
-
-    // Bu enumları public olarak tanımla
-    public TowerType towerType;
-    public TargetMethod targetMethod;
-    public SelectionMode selectionMode;
-    public CalculationMethod calculationMethod;
-    // AbstractTower tipinde bir değişken tanımla
-    private AbstractTower tower;
-    //private ProjectileTargetShooter shooter;
-
-    // Script başladığında çalışacak bir metod tanımlayın
-    private void Awake()
-    {
-        // Kule tipi ve düşman bulma şekli seçimini kolaylaştırmak için enum veya scriptable object kullanabilirsin. Örneğin:
-        switch (towerType)
+        // start crouch
+        if (Input.GetKeyDown(crouchKey) && horizontalInput == 0 && verticalInput == 0)
         {
-            case TowerType.Bullet:
-                switch (targetMethod)
-                {
-                    case TargetMethod.SphereCast:
-                        tower = new BulletTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce);
-                        break;
-                    case TargetMethod.OverlapSphere:
-                        switch (selectionMode)
-                        {
-                            case SelectionMode.RandomSelect:
-                                tower = new BulletTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, shotForce, OverlapSphereTarget.randomSelect);
-                                break;
-                            case SelectionMode.NearestSelect:
-                                tower = new BulletTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, shotForce, OverlapSphereTarget.nearestSelect);
-                                break;
-                        }
+            transform.localScale = new Vector3(transform.localScale.x, crouchYScale, transform.localScale.z);
+            rb.AddForce(Vector3.down * 5f, ForceMode.Impulse);
 
-                        break;
-                    case TargetMethod.Random:
-                        tower = new BulletTower(enemysTransforms, fireTransform, bulletPrefab, shotForce);
-                        break;
-                }
-                break;
-            case TowerType.Projectile:
-                switch (calculationMethod)
-                {
-                    case CalculationMethod.CalculateProjectileVelocity:
-                        switch (targetMethod)
-                        {
-                            case TargetMethod.SphereCast:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, fireAngle, true);
-                                break;
-                            case TargetMethod.OverlapSphere:
-                                switch (selectionMode)
-                                {
-                                    case SelectionMode.RandomSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab,OverlapSphereTarget.randomSelect, fireAngle, true);
-                                        break;
-                                    case SelectionMode.NearestSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, OverlapSphereTarget.nearestSelect, fireAngle, true);
-                                        break;
-                                }
-                                break;
-                            case TargetMethod.Random:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, fireAngle, shooter.CalculateProjectileVelocity);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(enemysTransforms, fireTransform, bulletPrefab, fireAngle, true);
-                                break;
-                        }
-                        break;
+            crouching = true;
+        }
 
-                    case CalculationMethod.CalculateProjectileAngle:
-                        switch (targetMethod)
-                        {
-                            case TargetMethod.SphereCast:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(scanTransform, scanTransform.forward, sphereRadius, maxDistance, layer, fireTransform, bulletPrefab, shotForce, false);
-                                break;
-                            case TargetMethod.OverlapSphere:
-                                switch (selectionMode)
-                                {
-                                    case SelectionMode.RandomSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, OverlapSphereTarget.randomSelect, fireAngle, false);
-                                        break;
-                                    case SelectionMode.NearestSelect:
-                                        // Bir ProjectileTargetShooter nesnesi oluşturma
-                                        //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
-                                        // Nesne üzerinden metodu çağırma
-                                        tower = new ProjectileTower(scanTransform, sphereRadius, layer, fireTransform, bulletPrefab, OverlapSphereTarget.nearestSelect, fireAngle, false);
-                                        break;
-                                }
-                                break;
-                            case TargetMethod.Random:
-                                // Bir ProjectileTargetShooter nesnesi oluşturma
-                                //shooter = new ProjectileTargetShooter(fireTransform, bulletPrefab, shotForce, shooter.CalculateProjectileAngle);
-                                // Nesne üzerinden metodu çağırma
-                                tower = new ProjectileTower(enemysTransforms, fireTransform, bulletPrefab, shotForce, false);
-                                break;
-                        }
-                        break;
-                }
-                break;
+        // stop crouch
+        if (Input.GetKeyUp(crouchKey))
+        {
+            transform.localScale = new Vector3(transform.localScale.x, startYScale, transform.localScale.z);
+
+            crouching = false;
         }
     }
 
-    // Her karede çalışacak bir metod tanımlayın
-    private void FixedUpdate()
+    bool keepMomentum;
+    private void StateHandler()
     {
-        // Ateş etme koşulunu bir bool değişkene atayabilirsin. Böylece kodun okunabilirliğini artırabilirsin. Örneğin:
-
-        bool canFire = Time.time - lastFireTime > 1f / fireRate;
-        if (canFire)
+        // Mode - Freeze
+        if (freeze)
         {
-            // Kuleye düşman hedeflemesini söyle
-            tower.EnemyTarget();
-
-            // Kuleye ateş etmesini söyle
-            tower.Fire();
-
-            // Son ateş etme zamanını güncelle
-            lastFireTime = Time.time;
+            state = MovementState.freeze;
+            rb.velocity = Vector3.zero;
+            desiredMoveSpeed = 0f;
         }
 
+        // Mode - Unlimited
+        else if (unlimited)
+        {
+            state = MovementState.unlimited;
+            desiredMoveSpeed = 999f;
+        }
+
+        // Mode - Vaulting
+        else if (vaulting)
+        {
+            state = MovementState.vaulting;
+            desiredMoveSpeed = vaultSpeed;
+        }
+
+        // Mode - Climbing
+        else if (climbing)
+        {
+            state = MovementState.climbing;
+            desiredMoveSpeed = climbSpeed;
+        }
+
+        // Mode - Wallrunning
+        else if (wallrunning)
+        {
+            state = MovementState.wallrunning;
+            desiredMoveSpeed = wallrunSpeed;
+        }
+
+        // Mode - Sliding
+        else if (sliding)
+        {
+            state = MovementState.sliding;
+
+            // increase speed by one every second
+            if (OnSlope() && rb.velocity.y < 0.1f)
+            {
+                desiredMoveSpeed = slideSpeed;
+                keepMomentum = true;
+            }
+
+            else
+                desiredMoveSpeed = sprintSpeed;
+        }
+
+        // Mode - Crouching
+        else if (crouching)
+        {
+            state = MovementState.crouching;
+            desiredMoveSpeed = crouchSpeed;
+        }
+
+        // Mode - Sprinting
+        else if (grounded && Input.GetKey(sprintKey))
+        {
+            state = MovementState.sprinting;
+            desiredMoveSpeed = sprintSpeed;
+        }
+
+        // Mode - Grappling
+        else if (activeGrapple)
+        {
+            state = MovementState.grappling;
+            moveSpeed = sprintSpeed;
+        }
+
+        // Mode - Swinging
+        else if (swinging)
+        {
+            state = MovementState.swinging;
+            moveSpeed = swingSpeed;
+        }
+
+        // Mode - Walking
+        else if (grounded)
+        {
+            state = MovementState.walking;
+            desiredMoveSpeed = walkSpeed;
+        }
+
+        // Mode - Air
+        else
+        {
+            state = MovementState.air;
+
+            if (moveSpeed < airMinSpeed)
+                desiredMoveSpeed = airMinSpeed;
+        }
+
+        bool desiredMoveSpeedHasChanged = desiredMoveSpeed != lastDesiredMoveSpeed;
+
+        if (desiredMoveSpeedHasChanged)
+        {
+            if (keepMomentum)
+            {
+                StopAllCoroutines();
+                StartCoroutine(SmoothlyLerpMoveSpeed());
+            }
+            else
+            {
+                moveSpeed = desiredMoveSpeed;
+            }
+        }
+
+        lastDesiredMoveSpeed = desiredMoveSpeed;
+
+        // deactivate keepMomentum
+        if (Mathf.Abs(desiredMoveSpeed - moveSpeed) < 0.1f) keepMomentum = false;
+    }
+
+    private IEnumerator SmoothlyLerpMoveSpeed()
+    {
+        // smoothly lerp movementSpeed to desired value
+        float time = 0;
+        float difference = Mathf.Abs(desiredMoveSpeed - moveSpeed);
+        float startValue = moveSpeed;
+
+        while (time < difference)
+        {
+            moveSpeed = Mathf.Lerp(startValue, desiredMoveSpeed, time / difference);
+
+            if (OnSlope())
+            {
+                float slopeAngle = Vector3.Angle(Vector3.up, slopeHit.normal);
+                float slopeAngleIncrease = 1 + (slopeAngle / 90f);
+
+                time += Time.deltaTime * speedIncreaseMultiplier * slopeIncreaseMultiplier * slopeAngleIncrease;
+            }
+            else
+                time += Time.deltaTime * speedIncreaseMultiplier;
+
+            yield return null;
+        }
+
+        moveSpeed = desiredMoveSpeed;
+    }
+
+    private void MovePlayer()
+    {
+        //if (climbingScript.exitingWall) return;
+        if (climbingScriptDone.exitingWall) return;
+        if (restricted) return;
+        if (activeGrapple) return;
+        if (swinging) return;
+
+        // calculate movement direction
+        moveDirection = orientation.forward * verticalInput + orientation.right * horizontalInput;
+
+        // on slope
+        if (OnSlope() && !exitingSlope)
+        {
+            rb.AddForce(GetSlopeMoveDirection(moveDirection) * moveSpeed * 20f, ForceMode.Force);
+
+            if (rb.velocity.y > 0)
+                rb.AddForce(Vector3.down * 80f, ForceMode.Force);
+        }
+
+        // on ground
+        else if (grounded)
+            rb.AddForce(moveDirection.normalized * moveSpeed * 10f, ForceMode.Force);
+
+        // in air
+        else if (!grounded)
+            rb.AddForce(moveDirection.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
+
+        // turn gravity off while on slope
+        if (!wallrunning) rb.useGravity = !OnSlope();
+    }
+
+    private void SpeedControl()
+    {
+        if (activeGrapple) return;
+
+        // limiting speed on slope
+        if (OnSlope() && !exitingSlope)
+        {
+            if (rb.velocity.magnitude > moveSpeed)
+                rb.velocity = rb.velocity.normalized * moveSpeed;
+        }
+
+        // limiting speed on ground or in air
+        else
+        {
+            Vector3 flatVel = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+
+            // limit velocity if needed
+            if (flatVel.magnitude > moveSpeed)
+            {
+                Vector3 limitedVel = flatVel.normalized * moveSpeed;
+                rb.velocity = new Vector3(limitedVel.x, rb.velocity.y, limitedVel.z);
+            }
+        }
+    }
+
+    private void Jump()
+    {
+        exitingSlope = true;
+
+        // reset y velocity
+        rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+
+        rb.AddForce(transform.up * jumpForce, ForceMode.Impulse);
+    }
+    private void ResetJump()
+    {
+        readyToJump = true;
+
+        exitingSlope = false;
+    }
+
+    public bool OnSlope()
+    {
+        if (Physics.Raycast(transform.position, Vector3.down, out slopeHit, playerHeight * 0.5f + 0.3f))
+        {
+            float angle = Vector3.Angle(Vector3.up, slopeHit.normal);
+            return angle < maxSlopeAngle && angle != 0;
+        }
+
+        return false;
+    }
+
+    public Vector3 GetSlopeMoveDirection(Vector3 direction)
+    {
+        return Vector3.ProjectOnPlane(direction, slopeHit.normal).normalized;
+    }
+
+    #region Text & Debugging
+
+    public TextMeshProUGUI text_speed;
+    public TextMeshProUGUI text_mode;
+    private void TextStuff()
+    {
+        Vector3 flatVel = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+
+        if (OnSlope())
+            text_speed.SetText("Speed: " + Round(rb.velocity.magnitude, 1) + " / " + Round(moveSpeed, 1));
+
+        else
+            text_speed.SetText("Speed: " + Round(flatVel.magnitude, 1) + " / " + Round(moveSpeed, 1));
+
+        text_mode.SetText(state.ToString());
+    }
+
+    public static float Round(float value, int digits)
+    {
+        float mult = Mathf.Pow(10.0f, (float)digits);
+        return Mathf.Round(value * mult) / mult;
+    }
+
+    #endregion
+
+    private bool enableMovementOnNextTouch;
+    public void JumpToPosition(Vector3 targetPosition, float trajectoryHeight)
+    {
+        activeGrapple = true;
+
+        velocityToSet = CalculateJumpVelocity(transform.position, targetPosition, trajectoryHeight);
+        Invoke(nameof(SetVelocity), 0.1f);
+
+        Invoke(nameof(ResetRestrictions), 3f);
+    }
+
+    private Vector3 velocityToSet;
+    private void SetVelocity()
+    {
+        enableMovementOnNextTouch = true;
+        rb.velocity = velocityToSet;
+
+        cam.DoFov(grappleFov);
+    }
+
+    public void ResetRestrictions()
+    {
+        activeGrapple = false;
+        cam.DoFov(85f);
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (enableMovementOnNextTouch)
+        {
+            enableMovementOnNextTouch = false;
+            ResetRestrictions();
+
+            GetComponent<DualHooks>().CancelActiveGrapples();
+        }
+    }
+
+    public Vector3 CalculateJumpVelocity(Vector3 startPoint, Vector3 endPoint, float trajectoryHeight)
+    {
+        float gravity = Physics.gravity.y;
+        float displacementY = endPoint.y - startPoint.y;
+        Vector3 displacementXZ = new Vector3(endPoint.x - startPoint.x, 0f, endPoint.z - startPoint.z);
+
+        Vector3 velocityY = Vector3.up * Mathf.Sqrt(-2 * gravity * trajectoryHeight);
+        Vector3 velocityXZ = displacementXZ / (Mathf.Sqrt(-2 * trajectoryHeight / gravity)
+            + Mathf.Sqrt(2 * (displacementY - trajectoryHeight) / gravity));
+
+        return velocityXZ + velocityY;
     }
 }
